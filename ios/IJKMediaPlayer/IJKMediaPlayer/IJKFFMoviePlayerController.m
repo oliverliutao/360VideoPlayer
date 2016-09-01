@@ -140,7 +140,7 @@ void IJKFFIOStatCompleteRegister(void (*cb)(const char *url,
 }
 
 - (id)initWithContentURL:(NSURL *)aUrl
-             withOptions:(IJKFFOptions *)options
+             withOptions:(IJKFFOptions *)options WithVideoType:(BOOL)is360Video
 {
     if (aUrl == nil)
         return nil;
@@ -149,11 +149,11 @@ void IJKFFIOStatCompleteRegister(void (*cb)(const char *url,
     NSString *aUrlString = [aUrl isFileURL] ? [aUrl path] : [aUrl absoluteString];
 
     return [self initWithContentURLString:aUrlString
-                              withOptions:options];
+                              withOptions:options WithVideoType:is360Video];
 }
 
 - (id)initWithContentURLString:(NSString *)aUrlString
-                   withOptions:(IJKFFOptions *)options
+                   withOptions:(IJKFFOptions *)options WithVideoType:(BOOL)is360Video
 {
     if (aUrlString == nil)
         return nil;
@@ -189,25 +189,31 @@ void IJKFFIOStatCompleteRegister(void (*cb)(const char *url,
         ijkmp_set_inject_opaque(_mediaPlayer, (__bridge void *) self);
         ijkmp_set_option_int(_mediaPlayer, IJKMP_OPT_CATEGORY_PLAYER, "start-on-prepared", _shouldAutoplay ? 1 : 0);
 
-        // init video sink
-        _glView = [[IJKSDLGLView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-        _glView.shouldShowHudView = NO;
-        _view   = _glView;
-        [_glView setHudValue:nil forKey:@"scheme"];
-        [_glView setHudValue:nil forKey:@"host"];
-        [_glView setHudValue:nil forKey:@"path"];
-        [_glView setHudValue:nil forKey:@"ip"];
-        [_glView setHudValue:nil forKey:@"http"];
-        [_glView setHudValue:nil forKey:@"tcp-spd"];
-        [_glView setHudValue:nil forKey:@"t-prepared"];
-        [_glView setHudValue:nil forKey:@"t-render"];
-        [_glView setHudValue:nil forKey:@"t-preroll"];
-        [_glView setHudValue:nil forKey:@"t-http-open"];
-        [_glView setHudValue:nil forKey:@"t-http-seek"];
-        
-        self.shouldShowHudView = options.showHudView;
+        if(!is360Video){
+            
+            // init video sink
+            _glView = [[IJKSDLGLView alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+            _glView.shouldShowHudView = NO;
+            _view   = _glView;
+            [_glView setHudValue:nil forKey:@"scheme"];
+            [_glView setHudValue:nil forKey:@"host"];
+            [_glView setHudValue:nil forKey:@"path"];
+            [_glView setHudValue:nil forKey:@"ip"];
+            [_glView setHudValue:nil forKey:@"http"];
+            [_glView setHudValue:nil forKey:@"tcp-spd"];
+            [_glView setHudValue:nil forKey:@"t-prepared"];
+            [_glView setHudValue:nil forKey:@"t-render"];
+            [_glView setHudValue:nil forKey:@"t-preroll"];
+            [_glView setHudValue:nil forKey:@"t-http-open"];
+            [_glView setHudValue:nil forKey:@"t-http-seek"];
+            
+            self.shouldShowHudView = options.showHudView;
+            
+            ijkmp_ios_set_glview(_mediaPlayer, _glView);
+            
+        }
 
-        ijkmp_ios_set_glview(_mediaPlayer, _glView);
+        
         ijkmp_set_option(_mediaPlayer, IJKMP_OPT_CATEGORY_PLAYER, "overlay-format", "fcc-_es2");
 #ifdef DEBUG
         [IJKFFMoviePlayerController setLogLevel:k_IJK_LOG_DEBUG];
@@ -1069,6 +1075,21 @@ inline static void fillMetaInternal(NSMutableDictionary *meta, IjkMediaMeta *raw
              object:self];
             break;
         }
+            
+        case FFP_MSG_SEND_AVFRAME:{
+            
+            //free avframe
+            if(avmsg->__ptr){
+                
+                if(self.delegate && [self.delegate respondsToSelector:@selector(renderIntervalWithPb:)]){
+                    
+                    [self.delegate renderIntervalWithPb:[self convertAVFrameToPB:avmsg->__ptr]];
+                }
+            }
+            
+            break;
+        }
+            
         default:
             // NSLog(@"unknown FFP_MSG_xxx(%d)\n", avmsg->what);
             break;
@@ -1525,6 +1546,78 @@ static int ijkff_inject_callback(void *opaque, int message, void *data, size_t d
         }
     });
 }
+
+
+//convert AVFrame to CVPixelBuffer
+-(CVPixelBufferRef)convertAVFrameToPB:(AVFrame *)_pFrame {
+    @synchronized (self) {
+        
+        if(!_pFrame || !_pFrame->data[0])
+            return NULL;
+        
+        NSDictionary *options = [NSDictionary dictionaryWithObjectsAndKeys:
+                                 @(_pFrame->linesize[0]), kCVPixelBufferBytesPerRowAlignmentKey,
+                                 [NSNumber numberWithBool:YES], kCVPixelBufferOpenGLESCompatibilityKey,
+                                 [NSDictionary dictionary], kCVPixelBufferIOSurfacePropertiesKey,
+                                 nil];
+        
+        
+        if (_pFrame->linesize[1] != _pFrame->linesize[2]) {
+            return NULL;
+        }
+        
+        size_t srcPlaneSize = _pFrame->linesize[1]*_pFrame->height/2;
+        size_t dstPlaneSize = srcPlaneSize *2;
+        uint8_t *dstPlane = malloc(dstPlaneSize);
+        
+        // interleave Cb and Cr plane
+        for(size_t i = 0; i<srcPlaneSize; i++){
+            dstPlane[2*i  ]=_pFrame->data[1][i];
+            dstPlane[2*i+1]=_pFrame->data[2][i];
+        }
+        
+        CVPixelBufferRef pbuf = NULL;
+        
+        int ret = CVPixelBufferCreate(kCFAllocatorDefault,
+                                      _pFrame->width,
+                                      _pFrame->height,
+                                      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                                      (__bridge CFDictionaryRef)(options),
+                                      &pbuf);
+        
+        CVPixelBufferLockBaseAddress(pbuf, 0);
+        
+        size_t bytePerRowY = CVPixelBufferGetBytesPerRowOfPlane(pbuf, 0);
+        size_t bytesPerRowUV = CVPixelBufferGetBytesPerRowOfPlane(pbuf, 1);
+        
+        void* base =  CVPixelBufferGetBaseAddressOfPlane(pbuf, 0);
+        memcpy(base, _pFrame->data[0], bytePerRowY*_pFrame->height);
+        
+        base = CVPixelBufferGetBaseAddressOfPlane(pbuf, 1);
+        memcpy(base, dstPlane, bytesPerRowUV*_pFrame->height/2);
+        
+        
+        CVPixelBufferUnlockBaseAddress(pbuf, 0);
+        
+        free(dstPlane);
+        
+        
+        if(ret != kCVReturnSuccess)
+        {
+            NSLog(@"CVPixelBufferCreate Failed");
+            
+            return NULL;
+        }
+        
+        //release
+        free(_pFrame);
+        
+        
+        return pbuf;
+        
+    }
+}
+
 
 @end
 

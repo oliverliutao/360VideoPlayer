@@ -28,9 +28,9 @@
 - (instancetype)init {
     self = [super init];
     if (self) {
-        self.title = @"Input URL";
+        self.title = @"Input URL Or Play Demo Video";
         
-        [self.navigationItem setRightBarButtonItem:[[UIBarButtonItem alloc] initWithTitle:@"Play" style:UIBarButtonItemStyleDone target:self action:@selector(onClickPlayButton)]];
+
     }
     return self;
 }
@@ -39,19 +39,33 @@
     [super viewDidLoad];
 }
 
-- (void)onClickPlayButton {
+
+
+- (void)textViewDidEndEditing:(UITextView *)textView {
+    [self playLive360Video:nil];
+}
+
+
+
+- (IBAction)playLive360Video:(id)sender {
+    
     NSURL *url = [NSURL URLWithString:self.textView.text];
     NSString *scheme = [[url scheme] lowercaseString];
     
-    if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"]) {
-        [IJKVideoViewController presentFromViewController:self withTitle:[NSString stringWithFormat:@"URL: %@", url] URL:url completion:^{
-//            [self.navigationController popViewControllerAnimated:NO];
-        }];
+    if ([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"] || [scheme isEqualToString:@"rtmp"]) {
+        [IJKVideoViewController presentFromViewController:self withTitle:[NSString stringWithFormat:@"URL: %@", url] URL:url completion:nil];
     }
+    
 }
 
-- (void)textViewDidEndEditing:(UITextView *)textView {
-    [self onClickPlayButton];
+- (IBAction)playLocal360Video:(id)sender {
+    
+        NSString *path = [[NSBundle mainBundle] pathForResource:@"google360" ofType:@"mp4"];
+        NSURL *url = [[NSURL alloc] initFileURLWithPath:path];
+    
+    [IJKVideoViewController presentFromViewController:self withTitle:[NSString stringWithFormat:@"URL: %@", url] URL:url completion:nil];
+    
 }
+
 
 @end

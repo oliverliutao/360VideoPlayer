@@ -18,6 +18,20 @@
 #import "IJKMediaControl.h"
 #import "IJKCommon.h"
 #import "IJKDemoHistory.h"
+#import "HTYGLKVC.h"
+
+#import "IJKAppDelegate.h"
+
+
+@interface IJKVideoViewController()<IJKFFMoviePlayerControllerDelegate>
+{
+    
+    
+    BOOL is360Video;
+    HTYGLKVC *_glkViewController;
+}
+
+@end
 
 @implementation IJKVideoViewController
 
@@ -73,16 +87,42 @@
     // [IJKFFMoviePlayerController checkIfPlayerVersionMatch:YES major:1 minor:0 micro:0];
 
     IJKFFOptions *options = [IJKFFOptions optionsByDefault];
+    
+    //default play 360 video
+    is360Video = YES;
+    
+    self.player = [[IJKFFMoviePlayerController alloc] initWithContentURL:self.url withOptions:options WithVideoType:is360Video];
+    
+    ((IJKFFMoviePlayerController *)self.player).delegate = self;
 
-    self.player = [[IJKFFMoviePlayerController alloc] initWithContentURL:self.url withOptions:options];
+    
     self.player.view.autoresizingMask = UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     self.player.view.frame = self.view.bounds;
     self.player.scalingMode = IJKMPMovieScalingModeAspectFit;
     self.player.shouldAutoplay = YES;
 
     self.view.autoresizesSubviews = YES;
-    [self.view addSubview:self.player.view];
-    [self.view addSubview:self.mediaControl];
+    
+    
+    if(is360Video){
+        
+        _glkViewController = [[HTYGLKVC alloc] init];
+        
+        [self.view addSubview:_glkViewController.view];
+        [self addChildViewController:_glkViewController];
+        [_glkViewController didMoveToParentViewController:self];
+        
+        _glkViewController.view.frame = self.view.bounds;
+        
+        [self.view addSubview:self.mediaControl];
+        
+        
+    }else{
+        
+        [self.view addSubview:self.player.view];
+        [self.view addSubview:self.mediaControl];
+        
+    }
 
     self.mediaControl.delegatePlayer = self.player;
 }
@@ -136,13 +176,28 @@
 
 - (IBAction)onClickHUD:(UIBarButtonItem *)sender
 {
-    if ([self.player isKindOfClass:[IJKFFMoviePlayerController class]]) {
-        IJKFFMoviePlayerController *player = self.player;
-        player.shouldShowHudView = !player.shouldShowHudView;
+    if ([self.player isKindOfClass:[IJKFFMoviePlayerController class]] && is360Video && _glkViewController) {
         
-        sender.title = (player.shouldShowHudView ? @"HUD On" : @"HUD Off");
+        if(_glkViewController.isUsingMotion){
+            
+            [_glkViewController stopDeviceMotion];
+            
+            [self.mediaControl hide];
+            
+            [self.view bringSubviewToFront:_glkViewController.view];
+            
+        }else{
+            
+            [_glkViewController startDeviceMotion];
+            
+            [self.mediaControl showNoFade];
+        }
+        
+        sender.title = _glkViewController.isUsingMotion ? @"finger" : @"gyro" ;
     }
 }
+
+
 
 - (IBAction)onClickPlay:(id)sender
 {
@@ -306,6 +361,20 @@
     [[NSNotificationCenter defaultCenter]removeObserver:self name:IJKMPMoviePlayerPlaybackDidFinishNotification object:_player];
     [[NSNotificationCenter defaultCenter]removeObserver:self name:IJKMPMediaPlaybackIsPreparedToPlayDidChangeNotification object:_player];
     [[NSNotificationCenter defaultCenter]removeObserver:self name:IJKMPMoviePlayerPlaybackStateDidChangeNotification object:_player];
+}
+
+#pragma mark ---- IJKFFMoviePlayerControllerDelegate
+
+- (void)renderIntervalWithPb:(CVPixelBufferRef)pb{
+    
+    if(_glkViewController){
+        
+        [_glkViewController renderInHTY:pb];
+        
+    }else{
+        //for normal video
+        CVPixelBufferRelease(pb);
+    }
 }
 
 @end

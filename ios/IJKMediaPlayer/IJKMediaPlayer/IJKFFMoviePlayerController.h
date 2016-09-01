@@ -68,13 +68,20 @@ typedef enum IJKLogLevel {
     k_IJK_LOG_SILENT  = 8,
 } IJKLogLevel;
 
+@protocol IJKFFMoviePlayerControllerDelegate <NSObject>
+
+@optional
+-(void)renderIntervalWithPb:(CVPixelBufferRef)pb;
+
+@end
+
 @interface IJKFFMoviePlayerController : NSObject <IJKMediaPlayback>
 
 - (id)initWithContentURL:(NSURL *)aUrl
-             withOptions:(IJKFFOptions *)options;
+             withOptions:(IJKFFOptions *)options WithVideoType:(BOOL)is360Video;
 
 - (id)initWithContentURLString:(NSString *)aUrlString
-                   withOptions:(IJKFFOptions *)options;
+                   withOptions:(IJKFFOptions *)options WithVideoType:(BOOL)is360Video;
 
 - (void)prepareToPlay;
 - (void)play;
@@ -96,6 +103,8 @@ typedef enum IJKLogLevel {
 @property(nonatomic, readonly) CGFloat fpsInMeta;
 @property(nonatomic, readonly) CGFloat fpsAtOutput;
 @property(nonatomic) BOOL shouldShowHudView;
+
+@property (nonatomic , weak) id<IJKFFMoviePlayerControllerDelegate> delegate;
 
 - (void)setOptionValue:(NSString *)value
                 forKey:(NSString *)key

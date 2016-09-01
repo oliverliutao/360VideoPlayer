@@ -400,6 +400,11 @@ static int decoder_decode_frame(FFPlayer *ffp, Decoder *d, AVFrame *frame, AVSub
                     } else {
                         frame->pts = frame->pkt_dts;
                     }
+                    
+                    //notify frame to render
+                    AVFrame *__ptrAVFrame = (AVFrame *)malloc(sizeof(AVFrame));
+                    memcpy(__ptrAVFrame, (AVFrame*)frame, sizeof(AVFrame));
+                    ffp_notify_msg4(ffp, FFP_MSG_SEND_AVFRAME, __ptrAVFrame,0, 0);
                 }
                 }
                 break;
